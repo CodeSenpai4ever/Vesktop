@@ -39,15 +39,16 @@ jobs:
                   # Parse version components
                   IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
                   
-                  # Get commits since last tag
+                  # Get commits since last tag (including full body for BREAKING CHANGE detection)
                   if [ "$LATEST_TAG" != "v0.0.0" ]; then
-                      COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s")
+                      COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%B")
                   else
-                      COMMITS=$(git log --pretty=format:"%s")
+                      COMMITS=$(git log --pretty=format:"%B")
                   fi
                   
                   # Determine version bump based on conventional commits
-                  if echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:"; then
+                  # Check for breaking changes (! suffix or BREAKING CHANGE in body)
+                  if echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?!:" || echo "$COMMITS" | grep -qE "BREAKING CHANGE:"; then
                       # Major version bump for breaking changes
                       MAJOR=$((MAJOR + 1))
                       MINOR=0
@@ -113,23 +114,17 @@ jobs:
             - name: Build
               run: pnpm build
 
-            - name: Run Electron Builder (Non-Mac)
-              if: matrix.platform != 'mac'
-              run: |
-                  pnpm electron-builder --${{ matrix.platform }} --publish never
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Run Electron Builder (Mac)
+            - name: Prepare Apple signing key (Mac only)
               if: matrix.platform == 'mac'
               run: |
                   if [ -n "${{ secrets.APPLE_API_KEY }}" ]; then
                       echo "${{ secrets.APPLE_API_KEY }}" > apple.p8
-                      pnpm electron-builder --${{ matrix.platform }} --publish never
-                  else
-                      echo "Skipping Mac signing - no credentials"
-                      pnpm electron-builder --${{ matrix.platform }} --publish never
                   fi
+              shell: bash
+
+            - name: Run Electron Builder
+              run: |
+                  pnpm electron-builder --${{ matrix.platform }} --publish never
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   CSC_LINK: ${{ secrets.APPLE_SIGNING_CERT }}
@@ -137,7 +132,6 @@ jobs:
                   APPLE_API_KEY: apple.p8
                   APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
                   APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-              shell: bash
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v4
@@ -193,8 +187,8 @@ jobs:
                       -name "*.AppImage" -o \
                       -name "*.tar.gz" -o \
                       -name "*.zip" -o \
-                      -name "*.pacman" -o \
-                      -name "*.pkg.tar.zst" \
+                      -name "*.pkg.tar.zst" -o \
+                      -name "*.pkg.tar.xz" \
                   \) | while read file; do
                       filename=$(basename "$file")
                       echo "Uploading $filename..."
