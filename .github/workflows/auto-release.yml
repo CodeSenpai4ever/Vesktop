@@ -1,0 +1,203 @@
+name: Auto Release
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    version:
+        runs-on: ubuntu-latest
+        outputs:
+            new_version: ${{ steps.semver.outputs.new_version }}
+            new_tag: ${{ steps.semver.outputs.new_tag }}
+            should_release: ${{ steps.semver.outputs.should_release }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Get latest tag
+              id: get_tag
+              run: |
+                  # Get the latest tag, or use v0.0.0 if no tags exist
+                  LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+                  echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+                  echo "Latest tag: $LATEST_TAG"
+
+            - name: Determine version bump
+              id: semver
+              run: |
+                  LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+                  # Remove 'v' prefix for processing
+                  CURRENT_VERSION="${LATEST_TAG#v}"
+                  
+                  # Parse version components
+                  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+                  
+                  # Get commits since last tag
+                  if [ "$LATEST_TAG" != "v0.0.0" ]; then
+                      COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s")
+                  else
+                      COMMITS=$(git log --pretty=format:"%s")
+                  fi
+                  
+                  # Determine version bump based on conventional commits
+                  if echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:"; then
+                      # Major version bump for breaking changes
+                      MAJOR=$((MAJOR + 1))
+                      MINOR=0
+                      PATCH=0
+                  elif echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?:"; then
+                      # Minor version bump for new features
+                      MINOR=$((MINOR + 1))
+                      PATCH=0
+                  elif echo "$COMMITS" | grep -qE "^(fix|bugfix)(\(.+\))?:"; then
+                      # Patch version bump for fixes
+                      PATCH=$((PATCH + 1))
+                  else
+                      # No version bump needed
+                      echo "No conventional commits found, skipping release"
+                      echo "should_release=false" >> $GITHUB_OUTPUT
+                      exit 0
+                  fi
+                  
+                  NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+                  NEW_TAG="v${NEW_VERSION}"
+                  
+                  echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+                  echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+                  echo "should_release=true" >> $GITHUB_OUTPUT
+                  echo "New version: $NEW_VERSION"
+                  echo "New tag: $NEW_TAG"
+
+    release:
+        needs: version
+        if: needs.version.outputs.should_release == 'true'
+        runs-on: ${{ matrix.os }}
+        
+        strategy:
+            matrix:
+                os: [macos-latest, ubuntu-latest, windows-latest]
+                include:
+                    - os: macos-latest
+                      platform: mac
+                    - os: ubuntu-latest
+                      platform: linux
+                    - os: windows-latest
+                      platform: windows
+
+        steps:
+            - uses: actions/checkout@v4
+            
+            - uses: pnpm/action-setup@v4
+
+            - name: Use Node.js 20
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "pnpm"
+
+            - name: Update package.json version
+              run: |
+                  npm version ${{ needs.version.outputs.new_version }} --no-git-tag-version
+              shell: bash
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build
+              run: pnpm build
+
+            - name: Run Electron Builder (Non-Mac)
+              if: matrix.platform != 'mac'
+              run: |
+                  pnpm electron-builder --${{ matrix.platform }} --publish never
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Run Electron Builder (Mac)
+              if: matrix.platform == 'mac'
+              run: |
+                  if [ -n "${{ secrets.APPLE_API_KEY }}" ]; then
+                      echo "${{ secrets.APPLE_API_KEY }}" > apple.p8
+                      pnpm electron-builder --${{ matrix.platform }} --publish never
+                  else
+                      echo "Skipping Mac signing - no credentials"
+                      pnpm electron-builder --${{ matrix.platform }} --publish never
+                  fi
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  CSC_LINK: ${{ secrets.APPLE_SIGNING_CERT }}
+                  CSC_KEY_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
+                  APPLE_API_KEY: apple.p8
+                  APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+                  APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+              shell: bash
+
+            - name: Upload artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: vesktop-${{ matrix.platform }}-${{ needs.version.outputs.new_version }}
+                  path: dist/*
+                  retention-days: 7
+
+    create-release:
+        needs: [version, release]
+        if: needs.version.outputs.should_release == 'true'
+        runs-on: ubuntu-latest
+        
+        steps:
+            - uses: actions/checkout@v4
+            
+            - name: Download all artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: release-artifacts
+
+            - name: Create Release
+              id: create_release
+              uses: actions/create-release@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: ${{ needs.version.outputs.new_tag }}
+                  release_name: Release ${{ needs.version.outputs.new_tag }}
+                  draft: false
+                  prerelease: false
+                  body: |
+                      ## Changes
+                      
+                      Auto-generated release ${{ needs.version.outputs.new_tag }}
+                      
+                      ### Installation
+                      
+                      Download the appropriate file for your platform:
+                      - **Windows**: `.exe` or `.zip`
+                      - **macOS**: `.dmg`
+                      - **Linux**: `.deb`, `.rpm`, `.AppImage`, or `.tar.gz`
+
+            - name: Upload Release Assets
+              run: |
+                  # Find all distributable files and upload them
+                  find release-artifacts -type f \( \
+                      -name "*.exe" -o \
+                      -name "*.dmg" -o \
+                      -name "*.deb" -o \
+                      -name "*.rpm" -o \
+                      -name "*.AppImage" -o \
+                      -name "*.tar.gz" -o \
+                      -name "*.zip" -o \
+                      -name "*.pacman" -o \
+                      -name "*.pkg.tar.zst" \
+                  \) | while read file; do
+                      filename=$(basename "$file")
+                      echo "Uploading $filename..."
+                      gh release upload ${{ needs.version.outputs.new_tag }} "$file" --clobber
+                  done
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
