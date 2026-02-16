@@ -33,6 +33,10 @@ jobs:
             - name: Install Vesktop dependencies
               run: pnpm install --frozen-lockfile
 
+            - name: Install Linux packaging dependencies
+              if: matrix.platform == 'linux'
+              run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
             - name: Build Vencord with custom plugins
               run: pnpm prepare:plugins
 
@@ -41,15 +45,11 @@ jobs:
 
             - name: Package for Windows
               if: matrix.platform == 'windows'
-              run: pnpm electron-builder --windows nsis zip
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: pnpm electron-builder --windows nsis zip --publish never
 
             - name: Package for Linux
               if: matrix.platform == 'linux'
-              run: pnpm electron-builder --linux tar.gz pacman
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: pnpm electron-builder --linux tar.gz pacman --publish never
 
             - name: Upload Windows artifacts
               if: matrix.platform == 'windows'
@@ -57,8 +57,8 @@ jobs:
               with:
                   name: vesktop-custom-windows
                   path: |
-                      release/*.exe
-                      release/*.zip
+                      dist/*.exe
+                      dist/*.zip
 
             - name: Upload Linux artifacts
               if: matrix.platform == 'linux'
@@ -66,6 +66,6 @@ jobs:
               with:
                   name: vesktop-custom-linux
                   path: |
-                      release/*.tar.gz
-                      release/*.pacman
-                      release/*.pkg.tar.zst
+                      dist/*.tar.gz
+                      dist/*.pacman
+                      dist/*.pkg.tar.zst
