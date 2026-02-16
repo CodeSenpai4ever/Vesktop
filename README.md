@@ -7,6 +7,7 @@ Vesktop is a custom Discord desktop app
 - Much more lightweight and faster than the official Discord app
 - Linux Screenshare with sound & wayland
 - Much better privacy, since Discord has no access to your system
+- Automatic updates with semantic versioning
 
 **Not yet supported**:
 - Global Keybinds
@@ -18,6 +19,12 @@ Vesktop is a custom Discord desktop app
 ## Installing
 
 Visit https://vesktop.dev/install
+
+The application includes automatic updates. When a new version is released, you'll be notified and can update with one click.
+
+## Releases
+
+This repository uses automated releases with semantic versioning. See [RELEASE.md](RELEASE.md) for details on the release process and how updates work.
 
 ## Building from Source
 
