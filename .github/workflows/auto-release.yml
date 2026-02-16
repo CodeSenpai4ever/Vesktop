@@ -159,30 +159,31 @@ jobs:
               with:
                   path: release-artifacts
 
-            - name: Create Release
-              id: create_release
-              uses: actions/create-release@v1
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              with:
-                  tag_name: ${{ needs.version.outputs.new_tag }}
-                  release_name: Release ${{ needs.version.outputs.new_tag }}
-                  draft: false
-                  prerelease: false
-                  body: |
-                      ## Changes
-                      
-                      Auto-generated release ${{ needs.version.outputs.new_tag }}
-                      
-                      ### Installation
-                      
-                      Download the appropriate file for your platform:
-                      - **Windows**: `.exe` or `.zip`
-                      - **macOS**: `.dmg`
-                      - **Linux**: `.deb`, `.rpm`, `.AppImage`, or `.tar.gz`
-
-            - name: Upload Release Assets
+            - name: Create Release and Upload Assets
               run: |
+                  # Create release notes
+                  cat > release_notes.md << 'EOF'
+                  ## Changes
+                  
+                  Auto-generated release ${{ needs.version.outputs.new_tag }}
+                  
+                  ### Installation
+                  
+                  Download the appropriate file for your platform:
+                  - **Windows**: `.exe` or `.zip`
+                  - **macOS**: `.dmg`
+                  - **Linux**: `.deb`, `.rpm`, `.AppImage`, or `.tar.gz`
+                  
+                  ### Auto-Updates
+                  
+                  If you already have Vesktop installed, you will be notified of this update automatically.
+                  EOF
+                  
+                  # Create the release with tag
+                  gh release create ${{ needs.version.outputs.new_tag }} \
+                      --title "Release ${{ needs.version.outputs.new_tag }}" \
+                      --notes-file release_notes.md
+                  
                   # Find all distributable files and upload them
                   find release-artifacts -type f \( \
                       -name "*.exe" -o \
