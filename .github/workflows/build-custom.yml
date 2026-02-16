@@ -1,0 +1,69 @@
+name: Build with Custom Plugins
+
+on:
+    push:
+        paths:
+            - "userplugins.json"
+    workflow_dispatch:
+
+jobs:
+    build:
+        runs-on: ${{ matrix.os }}
+
+        strategy:
+            matrix:
+                include:
+                    - os: windows-latest
+                      platform: windows
+                    - os: ubuntu-latest
+                      platform: linux
+
+        steps:
+            - uses: actions/checkout@v4
+            - uses: pnpm/action-setup@v4
+
+            - name: Use Node.js 20
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "pnpm"
+
+            - name: Install Vesktop dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build Vencord with custom plugins
+              run: pnpm prepare:plugins
+
+            - name: Build Vesktop
+              run: pnpm build
+
+            - name: Package for Windows
+              if: matrix.platform == 'windows'
+              run: pnpm electron-builder --windows nsis zip
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Package for Linux
+              if: matrix.platform == 'linux'
+              run: pnpm electron-builder --linux tar.gz pacman
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Upload Windows artifacts
+              if: matrix.platform == 'windows'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: vesktop-custom-windows
+                  path: |
+                      release/*.exe
+                      release/*.zip
+
+            - name: Upload Linux artifacts
+              if: matrix.platform == 'linux'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: vesktop-custom-linux
+                  path: |
+                      release/*.tar.gz
+                      release/*.pacman
+                      release/*.pkg.tar.zst
