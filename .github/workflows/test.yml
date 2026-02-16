@@ -26,7 +26,7 @@ jobs:
             - name: Run tests
               run: pnpm test
 
-            - name: Build Vencord with custom plugins
+            - name: Prepare and build Vencord with custom plugins
               run: pnpm prepare:plugins
 
             - name: Test if it compiles
