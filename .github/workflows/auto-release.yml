@@ -83,10 +83,8 @@ jobs:
         
         strategy:
             matrix:
-                os: [macos-latest, ubuntu-latest, windows-latest]
+                os: [ubuntu-latest, windows-latest]
                 include:
-                    - os: macos-latest
-                      platform: mac
                     - os: ubuntu-latest
                       platform: linux
                     - os: windows-latest
@@ -114,24 +112,11 @@ jobs:
             - name: Build
               run: pnpm build
 
-            - name: Prepare Apple signing key (Mac only)
-              if: matrix.platform == 'mac'
-              run: |
-                  if [ -n "${{ secrets.APPLE_API_KEY }}" ]; then
-                      echo "${{ secrets.APPLE_API_KEY }}" > apple.p8
-                  fi
-              shell: bash
-
             - name: Run Electron Builder
               run: |
                   pnpm electron-builder --${{ matrix.platform }} --publish never
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  CSC_LINK: ${{ secrets.APPLE_SIGNING_CERT }}
-                  CSC_KEY_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
-                  APPLE_API_KEY: apple.p8
-                  APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-                  APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v4
@@ -165,7 +150,6 @@ jobs:
                   
                   Download the appropriate file for your platform:
                   - **Windows**: `.exe` or `.zip`
-                  - **macOS**: `.dmg`
                   - **Linux**: `.deb`, `.rpm`, `.AppImage`, or `.tar.gz`
                   
                   ### Auto-Updates
@@ -181,7 +165,6 @@ jobs:
                   # Find all distributable files and upload them
                   find release-artifacts -type f \( \
                       -name "*.exe" -o \
-                      -name "*.dmg" -o \
                       -name "*.deb" -o \
                       -name "*.rpm" -o \
                       -name "*.AppImage" -o \
