@@ -1,0 +1,9 @@
+{
+    "plugins": [
+         {
+            "name": "Encryptcord E2EE",
+            "url": "https://github.com/Inbestigator/encryptcord",
+            "branch": "main"
+        }
+    ]
+}

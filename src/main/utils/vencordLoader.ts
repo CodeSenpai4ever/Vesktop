@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { mkdirSync, readFileSync } from "fs";
+import { app } from "electron";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { access, constants as FsConstants, writeFile } from "fs/promises";
 import { VENCORD_FILES_DIR } from "main/vencordFilesDir";
 import { join } from "path";
@@ -68,10 +69,31 @@ export async function isValidVencordInstall(dir: string) {
     return !results.includes(false);
 }
 
+function tryUseBundledVencord(): boolean {
+    const bundledDir = join(app.getAppPath(), "static", "dist", "vencord");
+    if (!existsSync(bundledDir)) return false;
+
+    const allExist = FILES_TO_DOWNLOAD.every(f => existsSync(join(bundledDir, f)));
+    if (!allExist) return false;
+
+    console.log("[VencordLoader] Using bundled Vencord files");
+    mkdirSync(VENCORD_FILES_DIR, { recursive: true });
+
+    for (const file of FILES_TO_DOWNLOAD) {
+        copyFileSync(join(bundledDir, file), join(VENCORD_FILES_DIR, file));
+    }
+    return true;
+}
+
 export async function ensureVencordFiles() {
     if (await isValidVencordInstall(VENCORD_FILES_DIR)) return;
 
     mkdirSync(VENCORD_FILES_DIR, { recursive: true });
+
+    if (tryUseBundledVencord()) {
+        await writeFile(join(VENCORD_FILES_DIR, "package.json"), "{}");
+        return;
+    }
 
     await Promise.all([downloadVencordFiles(), writeFile(join(VENCORD_FILES_DIR, "package.json"), "{}")]);
 }
